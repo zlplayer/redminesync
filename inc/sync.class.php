@@ -2,11 +2,12 @@
 
 class PluginRedminesyncSync extends CommonGLPI
 {
-    static $config=array();
+    static $config = array();
     static $response_data = array();
     static $rightname = "plugin_redminesync";
 
-    static function updateConfig($data){
+    static function updateConfig($data)
+    {
         global $DB;
         $value = serialize(array(
             'url' => $data['url'],
@@ -14,32 +15,34 @@ class PluginRedminesyncSync extends CommonGLPI
             'hour' => $data['hour']
         ));
         $DB->query("UPDATE glpi_configs SET value='$value' WHERE context='unotech' AND name='redmine_data'");
-        $frequency = $data['hour']*60*60;
+        $frequency = $data['hour'] * 60 * 60;
         $DB->query("UPDATE glpi_crontasks SET frequency='$frequency' WHERE itemtype='PluginRedminesyncSync' AND name='Syncredmine'");
         return true;
     }
 
-    static function getConfig(){
-        if(count(self::$config)){
+    static function getConfig()
+    {
+        if (count(self::$config)) {
             return self::$config;
-        } else{
+        } else {
             self::initConfig();
             return self::$config;
         }
     }
-   
-    static function initConfig(){
+
+    static function initConfig()
+    {
         global $DB;
         $result = $DB->query('SELECT * FROM glpi_configs WHERE context="unotech" AND name="redmine_data"');
-        if($result->num_rows==0){
+        if ($result->num_rows == 0) {
             self::$config = array(
-                'url'=>'',
-                'key'=>'',
-                'hour'=>24
+                'url' => 'https://redmine.nomino.pl/',
+                'key' => '3152dfae44b1de956f847657cc1aa2353c112457',
+                'hour' => 1
             );
             $config = serialize(self::$config);
             $DB->query("INSERT INTO glpi_configs SET context='unotech', name='redmine_data', value='$config'");
-        } else{
+        } else {
             $result = $DB->request("SELECT * FROM glpi_configs WHERE context='unotech' AND name='redmine_data'");
             foreach ($result as $value) {
                 self::$config = unserialize($value['value']);
@@ -48,56 +51,57 @@ class PluginRedminesyncSync extends CommonGLPI
         }
     }
 
-    static function cronSyncredmine($task){
+    static function cronSyncredmine($task)
+    {
         self::initConfig();
         self::syncProjects();
         self::syncTasks();
-        self:: syncComments();
         return true;
     }
 
     // to sync projects
-    static function syncProjects(){
+    static function syncProjects()
+    {
         global $DB;
-        if(self::$config['url']=='' || self::$config['key']==''){
+        if (self::$config['url'] == '' || self::$config['key'] == '') {
             return false;
         }
         $ch = curl_init();
-        $request_url = self::$config['url'].'/projects.json?key='.self::$config['key'];
-        curl_setopt($ch, CURLOPT_URL,$request_url );
+        $request_url = self::$config['url'] . '/projects.json?key=' . self::$config['key'];
+        curl_setopt($ch, CURLOPT_URL, $request_url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         $response = curl_exec($ch);
         $result = json_decode($response);
 
         // no projects
-        if(NULL==$result || !count($result->projects)){
+        if (NULL == $result || !count($result->projects)) {
             return true;
         }
 
-        $project_ids =array();
+        $project_ids = array();
 
         foreach ($result->projects as $value) {
-            $project_ids[]=$value->id;
+            $project_ids[] = $value->id;
         }
         $project_ids_str = implode(', ', $project_ids);
         $res = $DB->request("SELECT rm_project_id FROM glpi_plugin_redminesync_synclog WHERE rm_project_id IN ($project_ids_str)");
         $inserted_ids = array();
-        foreach ($res as $projects){
-            $inserted_ids[]=$projects['rm_project_id'];
+        foreach ($res as $projects) {
+            $inserted_ids[] = $projects['rm_project_id'];
         }
-        
-        foreach ($result->projects as $projects){
-            if(in_array($projects->id, $inserted_ids)){
+
+        foreach ($result->projects as $projects) {
+            if (in_array($projects->id, $inserted_ids)) {
                 self::updateProjects($projects);
-            } else{
+            } else {
                 self::addProjects($projects);
             }
         }
-        
     }
-    
-    
-    static function addProjects($data){
+
+
+    static function addProjects($data)
+    {
         global $DB;
 
         $name = $data->name;
@@ -110,12 +114,13 @@ class PluginRedminesyncSync extends CommonGLPI
         $create_project_sql = "INSERT INTO glpi_projects SET priority='3', name='$name', content='$content', `date`='$date_creation', date_mod='$date_mod', date_creation='$date_creation', users_id='2'";
         $DB->query($create_project_sql);
         $project_id = $DB->insert_id();
-        
+
         $add_history_sql = "INSERT INTO glpi_plugin_redminesync_synclog SET rm_project_id='$redmine_id', project_id='$project_id', created_at='$now'";
         $DB->query($add_history_sql);
     }
 
-    static function updateProjects($data){
+    static function updateProjects($data)
+    {
         global $DB;
 
         $name = $data->name;
@@ -128,45 +133,7 @@ class PluginRedminesyncSync extends CommonGLPI
     }
 
     // to sync projects
-    static function syncTasks(){
-        global $DB;
-        if(self::$config['url']=='' || self::$config['key']==''){
-            return false;
-        }
-        $ch = curl_init();
-        $request_url = self::$config['url'].'/issues.json?key='.self::$config['key'];
-        curl_setopt($ch, CURLOPT_URL,$request_url );
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        $response = curl_exec($ch);
-        $result = json_decode($response);
-
-        // no issues
-        if(NULL==$result || !count($result->issues)){
-            return true;
-        }
-
-        // check if already synced
-        $issue_ids=array();
-        foreach ($result->issues as $issue){
-            $issue_ids[] = $issue->id;
-        }
-        $issue_ids = implode(', ', $issue_ids);
-        $res = $DB->request("SELECT rm_task_id FROM glpi_plugin_redminesync_synclog WHERE rm_task_id IN ($issue_ids)");
-        $inserted_ids = array();
-        foreach ($res as $issue){
-            $inserted_ids[]=$issue['rm_task_id'];
-        }
-        
-        foreach ($result->issues as $issue){
-            if(in_array($issue->id, $inserted_ids)){
-                self::updateTasks($issue);
-            } else{
-                self::addTasks($issue);
-            }
-        }
-    }
-
-    static function syncComments()
+    static function syncTasks()
     {
         global $DB;
         if (self::$config['url'] == '' || self::$config['key'] == '') {
@@ -179,18 +146,18 @@ class PluginRedminesyncSync extends CommonGLPI
         $response = curl_exec($ch);
         $result = json_decode($response);
 
-        // Brak zgłoszeń
-        if ($result == NULL || !count($result->issues)) {
+        // no issues
+        if (NULL == $result || !count($result->issues)) {
             return true;
         }
 
-        // Sprawdź, czy już zsynchronizowano
+        // check if already synced
         $issue_ids = array();
         foreach ($result->issues as $issue) {
             $issue_ids[] = $issue->id;
         }
-        $issue_ids_str = implode(', ', $issue_ids);
-        $res = $DB->request("SELECT rm_task_id FROM glpi_plugin_redminesync_synclog WHERE rm_task_id IN ($issue_ids_str)");
+        $issue_ids = implode(', ', $issue_ids);
+        $res = $DB->request("SELECT rm_task_id FROM glpi_plugin_redminesync_synclog WHERE rm_task_id IN ($issue_ids)");
         $inserted_ids = array();
         foreach ($res as $issue) {
             $inserted_ids[] = $issue['rm_task_id'];
@@ -199,48 +166,60 @@ class PluginRedminesyncSync extends CommonGLPI
         foreach ($result->issues as $issue) {
             if (in_array($issue->id, $inserted_ids)) {
                 self::updateTasks($issue);
+                self::addComments($issue);
+
             } else {
                 self::addTasks($issue);
+                self::addComments($issue);
             }
-            self::addComments($issue); // Dodaj komentarze jako wiadomości dla zgłoszenia
         }
-        curl_close($ch);
-        return true;
     }
 
-    // Dodaj komentarze jako wiadomości dla zgłoszenia
     static function addComments($issue)
     {
         global $DB;
     
-        $ticket_id = self::getTicketIdByIssueId($issue->id);
-        if (property_exists($issue, 'journals')) {
+    $ticket_id = self::getTicketIdByIssueId($issue->id);
 
-            foreach ($issue-> journals as $journals) {
-                $notes = $journals->notes;
-                $created_at = date('Y-m-d H:i:s', strtotime($journals->created_on));
+        // Adres URL do pobrania komentarzy dla danego zgłoszenia w Redmine
+        $url = self::$config['url'] . '//issues/' . $issue->id . '.json?include=journals&key=' . self::$config['key'];
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        $response = curl_exec($ch);
+        curl_close($ch);
+
+        $result = json_decode($response);
+
+        if (isset($result->issue->journals)) {
+            foreach ($result->issue->journals as $journal) {
+                $notes = $journal->notes;
+                $created_at = date('Y-m-d H:i:s', strtotime($journal->created_on));
             
                 // Utwórz nową wiadomość dla komentarza
                 $add_message_sql = "INSERT INTO glpi_ticketfollowups SET tickets_id='$ticket_id', date='$created_at', users_id='2', content='$notes', is_private='1'";
                 $DB->query($add_message_sql);
             }
         }
+    
     }
     static function getTicketIdByIssueId($redmine_issue_id)
     {
-        global $DB; 
-    
+        global $DB;
+
         $sql = "SELECT task_id FROM glpi_plugin_redminesync_synclog WHERE rm_task_id = '$redmine_issue_id' LIMIT 1";
         $result = $DB->query($sql);
         if ($result && $DB->numrows($result) > 0) {
             $row = $DB->fetch_assoc($result);
             return $row['task_id'];
         }
-    
+
         return 0;
     }
 
-    static function addTasks($issue){
+    static function addTasks($issue)
+    {
         global $DB;
         $name = $issue->subject;
         $content = $issue->description;
@@ -248,11 +227,11 @@ class PluginRedminesyncSync extends CommonGLPI
         $date_mod = date('Y-m-d H:i:s', strtotime($issue->updated_on));
         $redmine_id = $issue->id;
         $project_id = $issue->project->id;
-        $now = date('Y-m-d H:i:s'); 
+        $now = date('Y-m-d H:i:s');
 
         $res = $DB->request("SELECT project_id, rm_project_id FROM glpi_plugin_redminesync_synclog WHERE rm_project_id=$project_id LIMIT 1");
-        $project_id=0;
-        if(!count($res)){
+        $project_id = 0;
+        if (!count($res)) {
             return false;
         }
         $value = $res->next();
@@ -261,12 +240,13 @@ class PluginRedminesyncSync extends CommonGLPI
         $create_task_sql = "INSERT INTO glpi_projecttasks SET name='$name', content='$content', `date`='$start_date', date_mod='$date_mod', users_id='2', projects_id='$project_id'";
         $DB->query($create_task_sql);
         $task_id = $DB->insert_id();
-        
+
         $add_history_sql = "INSERT INTO glpi_plugin_redminesync_synclog SET rm_project_id='$redmine_id', project_id='$project_id', created_at='$now', task_id='$task_id', rm_task_id='$redmine_id'";
         $DB->query($add_history_sql);
     }
 
-    static function updateTasks($data){
+    static function updateTasks($data)
+    {
         global $DB;
 
         $name = $data->subject;
@@ -277,5 +257,4 @@ class PluginRedminesyncSync extends CommonGLPI
         (SELECT task_id FROM glpi_plugin_redminesync_synclog WHERE rm_task_id=$redmine_id LIMIT 1)";
         $DB->query($create_project_sql);
     }
-
 }
