@@ -115,6 +115,9 @@ class PluginRedminesyncSync extends CommonGLPI
         $DB->query($create_project_sql);
         $project_id = $DB->insert_id();
 
+        $create_ticket = "INSERT INTO glpi_tickets SET id='$project_id', name='$name', `date`='$date_creation', content='$content'";
+        $DB->query($create_ticket);
+
         $add_history_sql = "INSERT INTO glpi_plugin_redminesync_synclog SET rm_project_id='$redmine_id', project_id='$project_id', created_at='$now'";
         $DB->query($add_history_sql);
     }
@@ -167,7 +170,6 @@ class PluginRedminesyncSync extends CommonGLPI
             if (in_array($issue->id, $inserted_ids)) {
                 self::updateTasks($issue);
                 self::addComments($issue);
-
             } else {
                 self::addTasks($issue);
                 self::addComments($issue);
@@ -178,8 +180,8 @@ class PluginRedminesyncSync extends CommonGLPI
     static function addComments($issue)
     {
         global $DB;
-    
-    $ticket_id = self::getTicketIdByIssueId($issue->id);
+
+        $ticket_id = self::getTicketIdByIssueId($issue->id);
 
         // Adres URL do pobrania komentarzy dla danego zgłoszenia w Redmine
         $url = self::$config['url'] . '//issues/' . $issue->id . '.json?include=journals&key=' . self::$config['key'];
@@ -195,27 +197,44 @@ class PluginRedminesyncSync extends CommonGLPI
         if (isset($result->issue->journals)) {
             foreach ($result->issue->journals as $journal) {
                 $notes = $journal->notes;
-                $created_at = date('Y-m-d H:i:s', strtotime($journal->created_on));
-            
-                // Utwórz nową wiadomość dla komentarza
-                $add_message_sql = "INSERT INTO glpi_ticketfollowups SET tickets_id='$ticket_id', date='$created_at', users_id='2', content='$notes', is_private='1'";
-                $DB->query($add_message_sql);
+                if (!$notes == ''  && !self::checkIfNoteExistsInGlpi($journal->created_on)) {
+                    $created_at = date('Y-m-d H:i:s', strtotime($journal->created_on));
+
+                    // Utwórz nową wiadomość dla komentarza
+                    $add_message_sql = "INSERT INTO glpi_ticketfollowups SET tickets_id='$ticket_id', date='$created_at', users_id='2', content='$notes', is_private='1'";
+                    $DB->query($add_message_sql);
+                }
             }
         }
-    
     }
     static function getTicketIdByIssueId($redmine_issue_id)
     {
         global $DB;
 
-        $sql = "SELECT task_id FROM glpi_plugin_redminesync_synclog WHERE rm_task_id = '$redmine_issue_id' LIMIT 1";
+        $sql = "SELECT project_id FROM glpi_plugin_redminesync_synclog WHERE rm_task_id = '$redmine_issue_id' LIMIT 1";
         $result = $DB->query($sql);
         if ($result && $DB->numrows($result) > 0) {
             $row = $DB->fetch_assoc($result);
-            return $row['task_id'];
+            return $row['project_id'];
         }
 
         return 0;
+    }
+
+    static function checkIfNoteExistsInGlpi($note_date_creation){
+        global $DB;
+        $res = $DB->query("SELECT date FROM glpi_ticketfollowups");
+        
+        $notes_date = array();
+        foreach ($res as $note_date) {
+            $notes_date[] = $note_date['date'];
+        }
+        $redmine_creation_date = date('Y-m-d H:i:s', strtotime($note_date_creation));
+
+        if(in_array($redmine_creation_date,$notes_date))
+            return true;
+        else
+            return false;
     }
 
     static function addTasks($issue)
