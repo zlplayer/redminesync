@@ -245,10 +245,10 @@ class PluginRedminesyncSync extends CommonGLPI
         $start_date = date('Y-m-d H:i:s', strtotime($issue->start_date));
         $date_mod = date('Y-m-d H:i:s', strtotime($issue->updated_on));
         $redmine_id = $issue->id;
-        $project_id = $issue->project->id;
+        $redmine_project_id = $issue->project->id;
         $now = date('Y-m-d H:i:s');
 
-        $res = $DB->request("SELECT project_id, rm_project_id FROM glpi_plugin_redminesync_synclog WHERE rm_project_id=$project_id LIMIT 1");
+        $res = $DB->request("SELECT project_id, rm_project_id FROM glpi_plugin_redminesync_synclog WHERE rm_project_id=$redmine_project_id LIMIT 1");
         $project_id = 0;
         if (!count($res)) {
             return false;
@@ -260,7 +260,7 @@ class PluginRedminesyncSync extends CommonGLPI
         $DB->query($create_task_sql);
         $task_id = $DB->insert_id();
 
-        $add_history_sql = "INSERT INTO glpi_plugin_redminesync_synclog SET rm_project_id='$redmine_id', project_id='$project_id', created_at='$now', task_id='$task_id', rm_task_id='$redmine_id'";
+        $add_history_sql = "INSERT INTO glpi_plugin_redminesync_synclog SET rm_project_id='$redmine_project_id', project_id='$project_id', created_at='$now', task_id='$task_id', rm_task_id='$redmine_id'";
         $DB->query($add_history_sql);
     }
 
