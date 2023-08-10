@@ -115,6 +115,15 @@ class PluginRedminesyncSync extends CommonGLPI
         $DB->query($create_project_sql);
         $project_id = $DB->insert_id();
 
+        $tickets_ids = $DB->request("SELECT id FROM glpi_tickets");
+        foreach ($tickets_ids as $ticket_id) {
+            if ($ticket_id['id'] == $project_id) {
+                $project_id++;
+                $auto_increment_id = $project_id + 1;
+                $DB->query("ALTER TABLE glpi_projects AUTO_INCREMENT = '$auto_increment_id");
+            }
+        }
+
         $create_ticket = "INSERT INTO glpi_tickets SET id='$project_id', name='$name', `date`='$date_creation', content='$content'";
         $DB->query($create_ticket);
 
@@ -129,10 +138,29 @@ class PluginRedminesyncSync extends CommonGLPI
         $name = $data->name;
         $content = $data->description;
         $redmine_id = $data->id;
+        $date_creation = date('Y-m-d H:i:s', strtotime($data->created_on));
 
-        $create_project_sql = "UPDATE glpi_projects SET name='$name', content='$content' WHERE id=
-        (SELECT project_id FROM glpi_plugin_redminesync_synclog WHERE rm_project_id=$redmine_id LIMIT 1)";
+        $inserted_project_id = $DB->request("SELECT project_id FROM glpi_plugin_redminesync_synclog WHERE rm_project_id=$redmine_id LIMIT 1");
+        foreach($inserted_project_id as $id){
+            $project_id = $id['project_id'];
+        }
+        
+        $create_project_sql = "UPDATE glpi_projects SET name='$name', content='$content' WHERE id='$project_id'";
         $DB->query($create_project_sql);
+
+        $DB->query("UPDATE glpi_tickets SET name='$name', content='$content' WHERE id='$project_id'");
+
+        $tickets_dates = $DB->request("SELECT date FROM glpi_tickets");
+        $inserted_ticket_dates = array();
+
+        foreach ($tickets_dates as $date) {
+            $inserted_ticket_dates[] = $date['date'];
+        }
+        if (!in_array($date_creation,$inserted_ticket_dates)) {
+            $create_ticket = "INSERT INTO glpi_tickets SET id='$project_id', name='$name', `date`='$date_creation', content='$content'";
+            $DB->query($create_ticket);
+        }
+
     }
 
     // to sync projects
@@ -184,7 +212,7 @@ class PluginRedminesyncSync extends CommonGLPI
         $ticket_id = self::getTicketIdByIssueId($issue->id);
 
         // Adres URL do pobrania komentarzy dla danego zgłoszenia w Redmine
-        $url = self::$config['url'] . '//issues/' . $issue->id . '.json?include=journals&key=' . self::$config['key'];
+        $url = self::$config['url'] . '//issues/' . $issue->id . '.json?include=journals,attachments&key=' . self::$config['key'];
 
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $url);
@@ -221,17 +249,18 @@ class PluginRedminesyncSync extends CommonGLPI
         return 0;
     }
 
-    static function checkIfNoteExistsInGlpi($note_date_creation){
+    static function checkIfNoteExistsInGlpi($note_date_creation)
+    {
         global $DB;
         $res = $DB->query("SELECT date FROM glpi_ticketfollowups");
-        
+
         $notes_date = array();
         foreach ($res as $note_date) {
             $notes_date[] = $note_date['date'];
         }
         $redmine_creation_date = date('Y-m-d H:i:s', strtotime($note_date_creation));
 
-        if(in_array($redmine_creation_date,$notes_date))
+        if (in_array($redmine_creation_date, $notes_date))
             return true;
         else
             return false;
