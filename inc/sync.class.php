@@ -36,9 +36,9 @@ class PluginRedminesyncSync extends CommonGLPI
         $result = $DB->query('SELECT * FROM glpi_configs WHERE context="unotech" AND name="redmine_data"');
         if ($result->num_rows == 0) {
             self::$config = array(
-                'url' => 'https://redmine.nomino.pl/',
-                'key' => '3152dfae44b1de956f847657cc1aa2353c112457',
-                'hour' => 1
+                'url' => '',
+                'key' => '',
+                'hour' => 24
             );
             $config = serialize(self::$config);
             $DB->query("INSERT INTO glpi_configs SET context='unotech', name='redmine_data', value='$config'");
@@ -277,12 +277,13 @@ class PluginRedminesyncSync extends CommonGLPI
         foreach ($redmine_files as $redmine_file) {
             if (!in_array($redmine_file['link'], $files)) {
                 
-                $document_id = $DB->insert_id();
                 $data = file_get_contents($redmine_file['link']);
-                $localFilePath = '/var/www/glpi-2support.nomino.pl/files/TXT/29/' .$document_id. $redmine_file['filename'];
+                $hash = md5(uniqid(mt_rand(), true));
+                $hashed_filename = $hash;
+                $localFilePath = '/var/www/glpi-2support.nomino.pl/files/TXT/29/' .$hashed_filename;
                 file_put_contents($localFilePath, $data);
 
-                $filepath = "TXT/29/".$document_id. $redmine_file['filename'];
+                $filepath = "TXT/29/".$hashed_filename;
                 $glpi_insert_query = "INSERT INTO glpi_documents SET name='',filepath='$filepath' ,filename ='{$redmine_file['filename']}', link='{$redmine_file['link']}',
                 mime='{$redmine_file['mime']}',comment='{$redmine_file['comment']}',date_creation='{$redmine_file['date_creation']}', tickets_id='$ticket_id',users_id='2'";
 
@@ -291,7 +292,7 @@ class PluginRedminesyncSync extends CommonGLPI
                 $last_document_id = $DB->insert_id();
 
                 $glpi_insert_item_query = "INSERT INTO glpi_documents_items (documents_id, items_id, itemtype, entities_id, is_recursive, date_mod, users_id, timeline_position)
-                VALUES ('$last_document_id', '$ticket_id', 'Ticket', 1, 0, NOW(), 2, 0)";
+                VALUES ('$last_document_id', '$ticket_id', 'Ticket', 1, 0, '{$redmine_file['date_creation']}', 2, 0)";
                 $DB->query($glpi_insert_item_query);
             }
         }
