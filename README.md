@@ -1,5 +1,7 @@
 # project-sync-plugin
-Allows GLPI to auto sync Projects and Tasks from Redmine.
+Allows GLPI to auto sync Projects and Tasks, files and commends from Redmine.
+
+plugin was created based on the code https://github.com/KathreftisAI/project-sync-plugin
 
 **Requirement**
 Minimum GLPI Version : 9.2.4
