@@ -36,9 +36,9 @@ class PluginRedminesyncSync extends CommonGLPI
         $result = $DB->query('SELECT * FROM glpi_configs WHERE context="unotech" AND name="redmine_data"');
         if ($result->num_rows == 0) {
             self::$config = array(
-                'url' => 'https://redmine.nomino.pl/',
-                'key' => '3152dfae44b1de956f847657cc1aa2353c112457',
-                'hour' => 1
+                'url' => '',
+                'key' => '',
+                'hour' => 24
             );
             $config = serialize(self::$config);
             $DB->query("INSERT INTO glpi_configs SET context='unotech', name='redmine_data', value='$config'");
