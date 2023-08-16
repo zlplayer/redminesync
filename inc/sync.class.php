@@ -36,9 +36,9 @@ class PluginRedminesyncSync extends CommonGLPI
         $result = $DB->query('SELECT * FROM glpi_configs WHERE context="unotech" AND name="redmine_data"');
         if ($result->num_rows == 0) {
             self::$config = array(
-                'url' => '',
-                'key' => '',
-                'hour' => 24
+                'url' => 'https://redmine.nomino.pl/',
+                'key' => '3152dfae44b1de956f847657cc1aa2353c112457',
+                'hour' => 1
             );
             $config = serialize(self::$config);
             $DB->query("INSERT INTO glpi_configs SET context='unotech', name='redmine_data', value='$config'");
@@ -279,11 +279,10 @@ class PluginRedminesyncSync extends CommonGLPI
                 
                 $data = file_get_contents($redmine_file['link']);
                 $hash = md5(uniqid(mt_rand(), true));
-                $hashed_filename = $hash;
-                $localFilePath = '/var/www/glpi-2support.nomino.pl/files/TXT/29/' .$hashed_filename;
+                $localFilePath = '/var/www/glpi-2support.nomino.pl/files/TXT/29/' .$hash;
                 file_put_contents($localFilePath, $data);
 
-                $filepath = "TXT/29/".$hashed_filename;
+                $filepath = "TXT/29/".$hash;
                 $glpi_insert_query = "INSERT INTO glpi_documents SET name='',filepath='$filepath' ,filename ='{$redmine_file['filename']}', link='{$redmine_file['link']}',
                 mime='{$redmine_file['mime']}',comment='{$redmine_file['comment']}',date_creation='{$redmine_file['date_creation']}', tickets_id='$ticket_id',users_id='2'";
 
