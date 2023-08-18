@@ -116,18 +116,6 @@ class PluginRedminesyncSync extends CommonGLPI
         $DB->query($create_project_sql);
         $project_id = self::getLastInsertedId();
 
-        $tickets_ids = $DB->request("SELECT id FROM glpi_tickets");
-        foreach ($tickets_ids as $ticket_id) {
-            if ($ticket_id['id'] == $project_id) {
-                $project_id++;
-                $auto_increment_id = $project_id + 1;
-                $DB->query("ALTER TABLE glpi_projects AUTO_INCREMENT = '$auto_increment_id");
-            }
-        }
-
-        $create_ticket = "INSERT INTO glpi_tickets SET id='$project_id', name='$name', `date`='$date_creation', content='$content'";
-        $DB->query($create_ticket);
-
         $add_history_sql = "INSERT INTO glpi_plugin_redminesync_synclog SET rm_project_id='$redmine_id', project_id='$project_id', task_id='0', rm_task_id='0', created_at='$now'";
         $DB->query($add_history_sql);
     }
@@ -139,28 +127,14 @@ class PluginRedminesyncSync extends CommonGLPI
         $name = $data->name;
         $content = $data->description;
         $redmine_id = $data->id;
-        $date_creation = date('Y-m-d H:i:s', strtotime($data->created_on));
 
         $inserted_project_id = $DB->request("SELECT project_id FROM glpi_plugin_redminesync_synclog WHERE rm_project_id=$redmine_id LIMIT 1");
         foreach ($inserted_project_id as $id) {
             $project_id = $id['project_id'];
         }
 
-        $create_project_sql = "UPDATE glpi_projects SET name='$name', content='$content' WHERE id='$project_id'";
-        $DB->query($create_project_sql);
-
-        $DB->query("UPDATE glpi_tickets SET name='$name', content='$content' WHERE id='$project_id'");
-
-        $tickets_dates = $DB->request("SELECT date FROM glpi_tickets");
-        $inserted_ticket_dates = array();
-
-        foreach ($tickets_dates as $date) {
-            $inserted_ticket_dates[] = $date['date'];
-        }
-        if (!in_array($date_creation, $inserted_ticket_dates)) {
-            $create_ticket = "INSERT INTO glpi_tickets SET id='$project_id', name='$name', `date`='$date_creation', content='$content'";
-            $DB->query($create_ticket);
-        }
+        $update_project_sql = "UPDATE glpi_projects SET name='$name', content='$content' WHERE id='$project_id'";
+        $DB->query($update_project_sql);
     }
 
     // to sync projects
@@ -252,7 +226,7 @@ class PluginRedminesyncSync extends CommonGLPI
         }
     }
 
-    // Funkcja sprawdzająca, czy plik istnieje
+    // Function chechingk if File Exists
     static function checkIfFileExists($file_url)
     {
         $ch = curl_init($file_url);
@@ -265,50 +239,51 @@ class PluginRedminesyncSync extends CommonGLPI
 
     // Function mapping files from Redmine to GLPI
     static function mapFilesRedmineToGlpi($redmine_files, $ticket_id)
-{
-    global $DB;
+    {
+        global $DB;
 
-    // Sprawdź, czy plik już istnieje w bazie danych GLPI
-    $inserted_files = $DB->request("SELECT link FROM glpi_documents");
-    $files = array();
-    foreach ($inserted_files as $inserted_file) {
-        $files[] = $inserted_file['link'];
-    }
+        // Check if file already exists in GLPI database
+        $inserted_files = $DB->request("SELECT link FROM glpi_documents");
+        $files = array();
+        foreach ($inserted_files as $inserted_file) {
+            $files[] = $inserted_file['link'];
+        }
 
-    foreach ($redmine_files as $redmine_file) {
-        if (!in_array($redmine_file['link'], $files)) {
+        foreach ($redmine_files as $redmine_file) {
+            if (!in_array($redmine_file['link'], $files)) {
 
-            $data = file_get_contents($redmine_file['link']);
-            $hash = md5(uniqid(mt_rand(), true));
-            //Filepath is a prototype version for tests, has to be written manually depending on the place on a server
-            $localFilePath = '/var/www/html/glpi/files/TXT/20/' .$hash;
-            
-            file_put_contents($localFilePath, $data);
+                $data = file_get_contents($redmine_file['link']);
+                $hash = md5(uniqid(mt_rand(), true));
 
-            $filepath = "TXT/20/".$hash;
+                //Filepath is a prototype version for tests, has to be written manually depending on the place on a server
+                $localFilePath = '/var/www/html/glpi/files/TXT/20/' . $hash;
 
-            $glpi_insert_query = "INSERT INTO glpi_documents SET name='',filepath='$filepath' ,filename ='{$redmine_file['filename']}', link='{$redmine_file['link']}',
+                file_put_contents($localFilePath, $data);
+
+                $filepath = "TXT/20/" . $hash;
+
+                $glpi_insert_query = "INSERT INTO glpi_documents SET name='',filepath='$filepath' ,filename ='{$redmine_file['filename']}', link='{$redmine_file['link']}',
             mime='{$redmine_file['mime']}',comment='{$redmine_file['comment']}',date_creation='{$redmine_file['date_creation']}', tickets_id='$ticket_id',users_id='2'";
 
-            $DB->query($glpi_insert_query);
+                $DB->query($glpi_insert_query);
 
-            $last_document_id = self::getLastInsertedId();
+                $last_document_id = self::getLastInsertedId();
 
-            $glpi_insert_item_query = "INSERT INTO glpi_documents_items (documents_id, items_id, itemtype, entities_id, is_recursive, date_creation, users_id, timeline_position)
+                $glpi_insert_item_query = "INSERT INTO glpi_documents_items (documents_id, items_id, itemtype, entities_id, is_recursive, date_creation, users_id, timeline_position)
             VALUES ('$last_document_id', '$ticket_id', 'Ticket', 1, 0, '{$redmine_file['date_creation']}', 2, 0)";
-            $DB->query($glpi_insert_item_query);
+                $DB->query($glpi_insert_item_query);
+            }
         }
     }
-}
     static function getTicketIdByIssueId($redmine_issue_id)
     {
         global $DB;
 
-        $sql = "SELECT project_id FROM glpi_plugin_redminesync_synclog WHERE rm_task_id = '$redmine_issue_id' LIMIT 1";
+        $sql = "SELECT task_id FROM glpi_plugin_redminesync_synclog WHERE rm_task_id = '$redmine_issue_id' LIMIT 1";
         $result = $DB->query($sql);
         if ($result && $DB->numrows($result) == 1) {
-            foreach($result as $res){
-                return $res['project_id'];
+            foreach ($result as $res) {
+                return $res['task_id'];
             }
         }
         return 0;
@@ -337,23 +312,53 @@ class PluginRedminesyncSync extends CommonGLPI
         $name = $issue->subject;
         $content = $issue->description;
         $start_date = date('Y-m-d H:i:s', strtotime($issue->start_date));
+        $due_date = date('Y-m-d H:i:s', strtotime($issue->due_date));
         $date_mod = date('Y-m-d H:i:s', strtotime($issue->updated_on));
+        $date_creation = date('Y-m-d H:i:s', strtotime($issue->created_on));
+        $actiontime = $issue->estimated_hours * 3600;
         $redmine_id = $issue->id;
         $redmine_project_id = $issue->project->id;
         $now = date('Y-m-d H:i:s');
+
+        
 
         $res = $DB->request("SELECT project_id, rm_project_id FROM glpi_plugin_redminesync_synclog WHERE rm_project_id=$redmine_project_id LIMIT 1");
         $project_id = 0;
         if (!count($res)) {
             return false;
         }
-        foreach($res as $id){
+        foreach ($res as $id) {
             $project_id = $id['project_id'];
         }
 
-        $create_task_sql = "INSERT INTO glpi_projecttasks SET name='$name', content='$content', `date_creation`='$start_date', date_mod='$date_mod', users_id='2', projects_id='$project_id'";
+        $create_task_sql = "INSERT INTO glpi_projecttasks SET name='$name', content='$content', `date_creation`='$date_creation', date_mod='$date_mod', users_id='2', projects_id='$project_id'";
         $DB->query($create_task_sql);
         $task_id = self::getLastInsertedId();
+
+        $projecttasks_id = $task_id;
+
+        $tickets_ids = $DB->request("SELECT id FROM glpi_tickets");
+        foreach ($tickets_ids as $ticket_id) {
+            if ($ticket_id['id'] == $task_id) {
+                $task_id++;
+                $auto_increment_id = $task_id + 1;
+                $DB->query("ALTER TABLE glpi_projecttasks AUTO_INCREMENT = '$auto_increment_id");
+            }
+        }
+        if(isset($issue->due_date)){
+            $create_ticket = "INSERT INTO glpi_tickets SET id='$task_id',closedate= '$due_date',date_mod='$date_mod', actiontime = '$actiontime', name='$name', `date`='$start_date',date_creation='$date_creation', content='$content'";
+            $create_ticket_task = "INSERT INTO glpi_tickettasks SET tickets_id='$task_id',date='$date_creation',date_creation='$date_creation',begin='$start_date',end='$due_date',users_id='2',users_id_editor='2',content='$name',actiontime='$actiontime'";
+        }
+        else{
+            $create_ticket = "INSERT INTO glpi_tickets SET id='$task_id',date_mod='$date_mod', actiontime = '$actiontime', name='$name', `date`='$start_date',date_creation='$date_creation', content='$content'";
+            $create_ticket_task = "INSERT INTO glpi_tickettasks SET tickets_id='$task_id',date='$date_creation',date_creation='$date_creation',begin='$start_date',users_id='2',users_id_editor='2',content='$name',actiontime='$actiontime'";
+        }
+        $DB->query($create_ticket);
+        $DB->query($create_ticket_task);
+
+        $add_projecttickets_task = "INSERT INTO glpi_projecttasks_tickets SET tickets_id='$task_id', projecttasks_id = '$projecttasks_id'";
+        $DB->query($add_projecttickets_task);
+
         $add_history_sql = "INSERT INTO glpi_plugin_redminesync_synclog SET rm_project_id='$redmine_project_id', project_id='$project_id', created_at='$now', task_id='$task_id', rm_task_id='$redmine_id'";
         $DB->query($add_history_sql);
     }
@@ -365,17 +370,48 @@ class PluginRedminesyncSync extends CommonGLPI
         $name = $data->subject;
         $content = $data->description;
         $redmine_id = $data->id;
+        $date_creation = date('Y-m-d H:i:s', strtotime($data->created_on));
 
-        $create_project_sql = "UPDATE glpi_projecttasks SET name='$name', content='$content' WHERE id=
-        (SELECT task_id FROM glpi_plugin_redminesync_synclog WHERE rm_task_id=$redmine_id LIMIT 1)";
-        $DB->query($create_project_sql);
+        $start_date = date('Y-m-d H:i:s', strtotime($data->start_date));
+        $due_date = date('Y-m-d H:i:s', strtotime($data->due_date));
+        $date_mod = date('Y-m-d H:i:s', strtotime($data->updated_on));
+
+        $actiontime = $data->estimated_hours * 3600;
+
+
+        $inserted_tasks_id = $DB->request("SELECT task_id FROM glpi_plugin_redminesync_synclog WHERE rm_task_id=$redmine_id LIMIT 1");
+        foreach ($inserted_tasks_id as $id) {
+            $task_id = $id['task_id'];
+        }
+
+        $update_task_sql = "UPDATE glpi_projecttasks SET name='$name', content='$content' WHERE id='$task_id'";
+        $DB->query($update_task_sql);
+
+        // Adding tickets in GLPI
+        $DB->query("UPDATE glpi_tickets SET name='$name', content='$content' WHERE id='$task_id'");
+
+        $tickets_dates = $DB->request("SELECT date FROM glpi_tickets");
+        $inserted_ticket_dates = array();
+
+        foreach ($tickets_dates as $date) {
+            $inserted_ticket_dates[] = $date['date'];
+        }
+        if (!in_array($date_creation, $inserted_ticket_dates)) {
+            if(isset($data->due_date))
+                $create_ticket = "INSERT INTO glpi_tickets SET id='$task_id',closedate= '$due_date',date_mod='$date_mod', actiontime = '$actiontime', name='$name', `date`='$start_date',date_creation='$date_creation', content='$content'";
+            else
+                $create_ticket = "INSERT INTO glpi_tickets SET id='$task_id',date_mod='$date_mod', actiontime = '$actiontime', name='$name', `date`='$start_date',date_creation='$date_creation', content='$content'";
+
+            $DB->query($create_ticket);
+        }
     }
-    
-    static function getLastInsertedId(){
+
+    static function getLastInsertedId()
+    {
         global $DB;
         $inserted_id = $DB->query("SELECT LAST_INSERT_ID()");
 
-        foreach($inserted_id as $id){
+        foreach ($inserted_id as $id) {
             $last_id = $id['LAST_INSERT_ID()'];
         }
         return $last_id;
